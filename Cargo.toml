@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+publish = false
+license = "AGPL-3.0-only"
+repository = "https://github.com/jwh3times/RaceEngineerOverlays"
+
+[workspace.dependencies]
+reo-model = { path = "crates/model" }
+reo-irsdk = { path = "crates/irsdk" }
+reo-iracing = { path = "crates/iracing" }
+
+anyhow = "1.0.105"
+clap = { version = "4.6.10", features = ["derive"] }
+encoding_rs = "0.8.44"
+serde_yaml_ng = "0.10.0"
+thiserror = "2.0.21"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

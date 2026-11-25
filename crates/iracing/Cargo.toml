@@ -1,0 +1,17 @@
+[package]
+name = "reo-iracing"
+description = "iRacing adapter: maps SDK telemetry and session YAML onto the shared model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+reo-irsdk.workspace = true
+reo-model.workspace = true
+serde_yaml_ng.workspace = true
+
+[lints]
+workspace = true

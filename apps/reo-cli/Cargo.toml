@@ -1,0 +1,23 @@
+[package]
+name = "reo-cli"
+description = "Developer CLI: inspect live or recorded sim telemetry and benchmark the core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "reo"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+reo-iracing.workspace = true
+reo-irsdk.workspace = true
+reo-model.workspace = true
+
+[lints]
+workspace = true
