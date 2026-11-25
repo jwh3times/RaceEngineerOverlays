@@ -8,3 +8,8 @@
 *.lmudt
 
 .claude/settings.local.json
+
+# Local tooling and release packaging.
+node_modules/
+/dist/
+*.log
