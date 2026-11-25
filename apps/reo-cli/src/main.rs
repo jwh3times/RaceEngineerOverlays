@@ -15,7 +15,11 @@ use reo_model::{Poll, SessionInfo, Telemetry, TelemetrySource};
 use crate::irdt::{IrdtTape, Record};
 
 #[derive(Parser)]
-#[command(name = "reo", version, about = "Inspect live or recorded sim telemetry")]
+#[command(
+    name = "reo",
+    version,
+    about = "Inspect live or recorded sim telemetry"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
