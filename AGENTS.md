@@ -36,7 +36,7 @@ target/release/reo watch
 rustup installs it on the first `cargo` run.
 
 The repository scripts need only Node 26 (`.nvmrc`), with nothing to install. CI's `agents` and
-`changelog` jobs run them:
+`changelog` jobs run these:
 
 ```bash
 node scripts/sync-agents.mjs --check     # agent config is in sync
@@ -44,10 +44,16 @@ node scripts/check-skills.mjs            # installed skills match skills-lock.js
 node scripts/lint-agent-neutrality.mjs   # skill and agent sources read correctly from both trees
 node scripts/check-docs.mjs              # doc links resolve and docs/agents/docs.md maps every doc
 node scripts/check-cargo-version.mjs     # Cargo.toml's workspace version matches VERSION
-node scripts/next-version.mjs            # the version the next merge to main will mint
 node scripts/check-changelog.mjs         # the branch's changelog.d/ fragment is valid
+node --test "scripts/*.test.mjs"         # tests for the scripts
+```
+
+These two preview what the next release will do, and only run by hand. After the merge,
+`release.yml` runs `stamp-changelog.mjs` for real, without `--dry-run`:
+
+```bash
+node scripts/next-version.mjs            # the version the next merge to main will mint
 node scripts/stamp-changelog.mjs --dry-run   # the sections the release workflow would stamp
-node --test "scripts/*.test.mjs"         # tests for the scripts above
 ```
 
 Once a PR is open, read [docs/agents/merging.md](docs/agents/merging.md).
@@ -84,10 +90,10 @@ Once a PR is open, read [docs/agents/merging.md](docs/agents/merging.md).
 
 ## Known follow-ups
 
-- Session-YAML parsing takes about 5–8 ms and runs inline on the poll. Move it to a worker before
-  overlays depend on the poll thread.
-- `CarClassShortName` is empty in single-class sessions. Fall back to the car name when
-  displaying the class.
+Tracked as issues, which are the record:
+
+- [Move session-YAML parsing off the telemetry poll thread (#5)](https://github.com/jwh3times/RaceEngineerOverlays/issues/5)
+- [Fall back to the car name when CarClassShortName is empty (#6)](https://github.com/jwh3times/RaceEngineerOverlays/issues/6)
 
 ## Development flow
 
