@@ -28,8 +28,8 @@
   rewrite.
 - `AGENTS.md`: guidance for every coding agent: what this is, commands, layout, the rules for every
   change, the development flow and the agent skills. Update when a command, a crate or a rule
-  changes, or `.claude/settings.json` does. The `shared:` blocks are written by
-  `scripts/sync-agents.mjs`; never edit them here.
+  changes, the toolchain pins do (`rust-toolchain.toml`, `.nvmrc`), or `.claude/settings.json`
+  does. The `shared:` blocks are written by `scripts/sync-agents.mjs`; never edit them here.
 - `CLAUDE.md`: imports `AGENTS.md` for Claude Code. `owner-only`.
 - `docs/agents/*.md`: settings the shared skills read. Update when this repository's process
   changes, or the `main` or tag rulesets do (`open-pr.md` lists the `main` rules, `releases.md`
@@ -39,7 +39,7 @@
   tag rulesets do.
 - `docs/agents/dependabot.md`: what reviewing a Dependabot pull request takes here, read by the
   `dependabot` skill. Update when `.github/dependabot.yml`, a workflow's toolchain or install steps,
-  `rust-toolchain.toml` or the workspace's main dependencies change.
+  `rust-toolchain.toml`, `.nvmrc` or the workspace's main dependencies change.
 - `docs/agents/guard.md`: the commands `scripts/guard.mjs` denies or asks about here, and the
   paths it protects, on top of its universal rules. Update when a never-remove path in
   `docs/agents/workspace.md` changes, or a new kind of private recording appears.
@@ -60,4 +60,9 @@
   the folders under `crates/` and `apps/`.
 - CLI commands in `README.md` and `AGENTS.md`: the `Command` enum in `apps/reo-cli/src/main.rs`.
 - Release zip contents in `README.md`: the `package` job in `.github/workflows/release.yml`.
-- The toolchain in `README.md`, `AGENTS.md` and `docs/agents/dependabot.md`: `rust-toolchain.toml`.
+- The toolchain in `README.md`, `AGENTS.md` and `docs/agents/dependabot.md`: `rust-toolchain.toml`;
+  and the Node version in `AGENTS.md` and `docs/agents/dependabot.md`: `.nvmrc`.
+- Auto-merge, which `docs/agents/merging.md` says is disabled:
+  `gh api repos/jwh3times/RaceEngineerOverlays --jq .allow_auto_merge`.
+- CodeQL default setup, which `docs/agents/merging.md` says is configured (`state`):
+  `gh api repos/jwh3times/RaceEngineerOverlays/code-scanning/default-setup`.

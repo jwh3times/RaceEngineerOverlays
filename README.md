@@ -28,7 +28,8 @@ reo check <tape>              # replay a whole tape and report timings and sanit
 ```
 
 Every merge to `main` publishes a GitHub Release with a Windows x64 zip containing `reo.exe`,
-`README.md`, `LICENSE` and the release notes, plus `SHA256SUMS.txt`.
+`README.md`, `LICENSE`, `SECURITY.md` and the release notes as `RELEASE-NOTES.md`, plus
+`SHA256SUMS.txt`.
 
 ## Building from source
 

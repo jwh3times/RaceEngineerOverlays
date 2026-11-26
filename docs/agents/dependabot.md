@@ -52,7 +52,8 @@ and in the scheduled review. These facts apply to this repository only.
 
 - `Cargo.toml`'s `[workspace.dependencies]` (versions and the `windows` feature list) and
   `[workspace.lints]`.
-- `crates/irsdk/src/windows.rs` (windows), `crates/irsdk/src/layout.rs` (encoding_rs),
+- `crates/irsdk/src/windows.rs` (windows), `crates/irsdk/src/layout.rs`,
+  `crates/irsdk/src/client.rs` and `crates/irsdk/src/testing.rs` (encoding_rs),
   `crates/iracing/src/session.rs` (serde_yaml_ng), `apps/reo-cli/src/main.rs` (clap, anyhow).
 - The `with:` inputs in `ci.yml` and `release.yml`.
 

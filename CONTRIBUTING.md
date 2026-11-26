@@ -9,9 +9,10 @@
    - no allocation per tick on hot paths;
    - shared memory is only copied out of, never referenced;
    - telemetry recordings never enter the repository.
-2. `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` and
-   `cargo test --workspace` must pass. CI's `rust` job runs exactly these; its `agents` and
-   `changelog` jobs check the repository scripts and docs (the `node` commands in AGENTS.md).
+2. `cargo fmt --all`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and
+   `cargo test --workspace --locked` must pass. CI's `rust` job runs these, with
+   `cargo fmt --all --check` in place of the formatter; its `agents` and `changelog` jobs check
+   the repository scripts and docs (the first `node` block under "Commands" in AGENTS.md).
    Describe a user-visible change in a `changelog.d/` fragment, never in `CHANGELOG.md` itself
    ([changelog.d/README.md](changelog.d/README.md)).
 3. A bug fix needs a test that fails without it. Tests build synthetic shared-memory images
