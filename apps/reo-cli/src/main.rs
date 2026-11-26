@@ -2,7 +2,7 @@
 
 mod irdt;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -435,8 +435,16 @@ fn check(path: &std::path::Path) -> Result<()> {
             "drivers         {} entries, {real} racing",
             info.drivers.len()
         );
-        let classes: BTreeSet<_> = info.drivers.iter().map(|d| d.class.name.clone()).collect();
-        println!("classes         {classes:?}");
+        let classes: BTreeMap<_, _> = info
+            .drivers
+            .iter()
+            .map(|d| (d.class.id, d.class.name.as_deref().unwrap_or("(unnamed)")))
+            .collect();
+        let classes: Vec<_> = classes
+            .iter()
+            .map(|(id, name)| format!("{id} {name}"))
+            .collect();
+        println!("classes         {}", classes.join(" | "));
         println!(
             "player car      telemetry idx {:?}, session idx {:?}, shift {:?} rpm, redline {:?}, tank {:?} L",
             player_idx,
