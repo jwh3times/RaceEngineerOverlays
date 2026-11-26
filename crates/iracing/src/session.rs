@@ -6,6 +6,7 @@
 //! field becomes `None` rather than failing the whole document.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use reo_model::{
@@ -57,10 +58,11 @@ pub fn parse(yaml: &str, revision: i32) -> Result<SessionInfo, ParseError> {
         })
         .collect();
 
-    let drivers = list(driver_info, "Drivers")
+    let mut drivers: Vec<_> = list(driver_info, "Drivers")
         .iter()
         .filter_map(|d| driver(Some(d)))
         .collect();
+    name_classes(&mut drivers);
 
     Ok(SessionInfo {
         sim: Some(SimId::IRacing),
@@ -94,7 +96,8 @@ fn driver(d: Option<&Value>) -> Option<DriverEntry> {
             id: int(d, "CarClassID")
                 .and_then(|v| i32::try_from(v).ok())
                 .unwrap_or(0),
-            name: text(d, "CarClassShortName").unwrap_or_default(),
+            // Filled in per class by `name_classes` when iRacing leaves it empty.
+            name: text(d, "CarClassShortName"),
             color: int(d, "CarClassColor").and_then(|v| u32::try_from(v).ok()),
             est_lap_time: float(d, "CarClassEstLapTime")
                 .filter(|&t| t > 0.0)
@@ -105,6 +108,30 @@ fn driver(d: Option<&Value>) -> Option<DriverEntry> {
         is_spectator: int(d, "IsSpectator").is_some_and(|v| v != 0),
         is_pace_car: int(d, "CarIsPaceCar").is_some_and(|v| v != 0),
     })
+}
+
+/// iRacing leaves `CarClassShortName` empty in AI and hosted sessions, single-
+/// and multi-class alike. Name each unnamed class from what its drivers share:
+/// a name any of them carries, else the car when the class has one model.
+/// A class of several models stays `None`; its `id` still groups it.
+fn name_classes(drivers: &mut [DriverEntry]) {
+    let names: BTreeMap<i32, Option<String>> = drivers
+        .iter()
+        .map(|d| (d.class.id, class_name(drivers, d.class.id)))
+        .collect();
+    for d in drivers.iter_mut().filter(|d| d.class.name.is_none()) {
+        d.class.name.clone_from(&names[&d.class.id]);
+    }
+}
+
+fn class_name(drivers: &[DriverEntry], id: i32) -> Option<String> {
+    let class = drivers.iter().filter(|d| d.class.id == id);
+    if let Some(name) = class.clone().find_map(|d| d.class.name.clone()) {
+        return Some(name);
+    }
+    let mut models = class.map(|d| d.car_name.as_str()).filter(|n| !n.is_empty());
+    let model = models.next()?;
+    models.all(|m| m == model).then(|| model.to_owned())
 }
 
 fn session_kind(kind: &str) -> SessionKind {
@@ -284,6 +311,88 @@ mod tests {
     fn escapes_embedded_single_quotes() {
         let out = sanitize(" - UserName: *Bob's* car\n");
         assert_eq!(out, " - UserName: '*Bob''s* car'\n");
+    }
+
+    /// One driver as iRacing writes it, with an empty `class` written as the
+    /// bare `CarClassShortName: ` iRacing leaves in AI and hosted sessions.
+    fn driver_yaml(car_idx: u16, class_id: i32, car: &str, class: &str) -> String {
+        format!(
+            " - CarIdx: {car_idx}\n   CarScreenName: {car}\n   CarClassID: {class_id}\n   CarClassShortName: {class}\n"
+        )
+    }
+
+    fn class_names(drivers: &[String]) -> Vec<Option<String>> {
+        let yaml = format!("DriverInfo:\n Drivers:\n{}", drivers.concat());
+        let info = parse(&yaml, 1).unwrap();
+        info.drivers.into_iter().map(|d| d.class.name).collect()
+    }
+
+    #[test]
+    fn an_unnamed_single_model_class_takes_its_car_name() {
+        let names = class_names(&[
+            driver_yaml(1, 2523, "Dallara P217 LMP2", ""),
+            driver_yaml(2, 2523, "Dallara P217 LMP2", ""),
+        ]);
+        assert_eq!(
+            names,
+            [
+                Some("Dallara P217 LMP2".into()),
+                Some("Dallara P217 LMP2".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unnamed_multi_model_class_has_no_name() {
+        let names = class_names(&[
+            driver_yaml(1, 4011, "BMW M4 GT3 EVO", ""),
+            driver_yaml(2, 4011, "Ferrari 296 GT3", ""),
+            driver_yaml(3, 2523, "Dallara P217 LMP2", ""),
+        ]);
+        assert_eq!(names, [None, None, Some("Dallara P217 LMP2".into())]);
+    }
+
+    #[test]
+    fn a_name_one_driver_supplies_names_the_whole_class() {
+        let names = class_names(&[
+            driver_yaml(1, 4011, "BMW M4 GT3 EVO", ""),
+            driver_yaml(2, 4011, "Ferrari 296 GT3", "GT3"),
+        ]);
+        assert_eq!(names, [Some("GT3".into()), Some("GT3".into())]);
+    }
+
+    #[test]
+    fn named_classes_keep_iracings_names() {
+        let names = class_names(&[
+            driver_yaml(1, 4011, "Porsche 911 GT3 R (992)", "GT3 Class"),
+            driver_yaml(2, 2523, "Dallara P217 LMP2", "LMP2"),
+            // A driver's own name is never replaced by another driver's.
+            driver_yaml(3, 4011, "BMW M4 GT3 EVO", "GT3 Pro"),
+        ]);
+        assert_eq!(
+            names,
+            [
+                Some("GT3 Class".into()),
+                Some("LMP2".into()),
+                Some("GT3 Pro".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_driver_with_no_car_name_does_not_split_the_class() {
+        let names = class_names(&[
+            driver_yaml(1, 2523, "", ""),
+            driver_yaml(2, 2523, "Dallara P217 LMP2", ""),
+        ]);
+        let lmp2 = Some("Dallara P217 LMP2".to_owned());
+        assert_eq!(names, [lmp2.clone(), lmp2]);
+    }
+
+    #[test]
+    fn a_class_with_no_names_at_all_is_none_not_empty() {
+        let names = class_names(&[driver_yaml(1, 4011, "", "")]);
+        assert_eq!(names, [None]);
     }
 
     #[test]

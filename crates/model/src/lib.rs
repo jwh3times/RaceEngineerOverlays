@@ -213,7 +213,9 @@ pub struct DriverEntry {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CarClass {
     pub id: i32,
-    pub name: String,
+    /// `None` when the sim names no class and none can be inferred (a class of
+    /// several car models); group by `id`, which is always present.
+    pub name: Option<String>,
     /// 0xRRGGBB.
     pub color: Option<u32>,
     pub est_lap_time: Option<f32>,

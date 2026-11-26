@@ -93,7 +93,6 @@ Once a PR is open, read [docs/agents/merging.md](docs/agents/merging.md).
 Tracked as issues, which are the record:
 
 - [Move session-YAML parsing off the telemetry poll thread (#5)](https://github.com/jwh3times/RaceEngineerOverlays/issues/5)
-- [Fall back to the car name when CarClassShortName is empty (#6)](https://github.com/jwh3times/RaceEngineerOverlays/issues/6)
 
 ## Development flow
 
