@@ -15,6 +15,8 @@ const MAX_VARS: usize = 8192;
 const MAX_SESSION_INFO_LEN: usize = 16 << 20;
 /// Attempts to copy a row that the sim is not rewriting at the same time.
 const READ_ATTEMPTS: usize = 4;
+/// How much of the session-info region is copied before looking for its end.
+const SESSION_CHUNK: usize = 16 * 1024;
 
 /// One telemetry row, reused between polls to avoid per-tick allocation.
 #[derive(Clone, Debug, Default)]
@@ -132,8 +134,22 @@ impl<M: SharedMemory> Client<M> {
     }
 
     /// Reads and decodes the current session-info YAML, and marks this revision
-    /// as seen. Returns the text and its revision number.
+    /// as seen. Returns the text and its revision number. Allocates; a poll loop
+    /// uses [`Self::read_session_info`] with a reused buffer instead.
     pub fn session_info(&mut self) -> Result<(String, i32), Error> {
+        let mut raw = Vec::new();
+        let revision = self.read_session_info(&mut raw)?;
+        Ok((decode_session_info(&raw), revision))
+    }
+
+    /// Copies the current session-info text into `out`, still encoded as
+    /// Windows-1252 and without its NUL terminator, and marks this revision as
+    /// seen. Returns the revision number.
+    ///
+    /// `out` is cleared first and its capacity reused, so a caller that keeps
+    /// the buffer allocates only when a revision outgrows it. The sim reserves a
+    /// region much larger than the text; the copy stops at the terminator.
+    pub fn read_session_info(&mut self, out: &mut Vec<u8>) -> Result<i32, Error> {
         for _ in 0..READ_ATTEMPTS {
             let header = self.read_header()?;
             let len = usize::try_from(header.session_info_len)
@@ -142,20 +158,42 @@ impl<M: SharedMemory> Client<M> {
                 .ok_or(Error::InvalidHeader("session info length"))?;
             let offset = usize::try_from(header.session_info_offset)
                 .map_err(|_| Error::InvalidHeader("session info offset"))?;
-            let mut raw = vec![0u8; len];
-            if !self.mem.read_into(offset, &mut raw) {
-                return Err(Error::Truncated("session info"));
-            }
+            self.copy_until_nul(offset, len, out)?;
             // The sim may have started a new revision while we copied.
             if self.read_header()?.session_info_update != header.session_info_update {
                 continue;
             }
-            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-            let (text, _, _) = encoding_rs::WINDOWS_1252.decode(&raw[..end]);
             self.session_update = Some(header.session_info_update);
-            return Ok((text.into_owned(), header.session_info_update));
+            return Ok(header.session_info_update);
         }
         Err(Error::Busy("session info"))
+    }
+
+    /// Copies `len` bytes at `offset` into `out` a chunk at a time, stopping at
+    /// the first NUL, which is not kept.
+    fn copy_until_nul(&self, offset: usize, len: usize, out: &mut Vec<u8>) -> Result<(), Error> {
+        out.clear();
+        // The whole region must exist even though only the text is copied.
+        if offset
+            .checked_add(len)
+            .is_none_or(|end| end > self.mem.len())
+        {
+            return Err(Error::Truncated("session info"));
+        }
+        while out.len() < len {
+            let start = out.len();
+            let end = (start + SESSION_CHUNK).min(len);
+            out.resize(end, 0);
+            if !self.mem.read_into(offset + start, &mut out[start..]) {
+                return Err(Error::Truncated("session info"));
+            }
+            // `CStr` finds the NUL a word at a time; a byte loop costs ~20 µs here.
+            if let Ok(text) = std::ffi::CStr::from_bytes_until_nul(&out[start..]) {
+                out.truncate(start + text.count_bytes());
+                return Ok(());
+            }
+        }
+        Ok(())
     }
 
     fn forget_connection(&mut self) {
@@ -218,6 +256,13 @@ impl<M: SharedMemory> Client<M> {
         }
         Ok(None)
     }
+}
+
+/// Decodes session-info text copied by [`Client::read_session_info`] from
+/// Windows-1252, which is what iRacing writes.
+pub fn decode_session_info(raw: &[u8]) -> String {
+    let (text, _, _) = encoding_rs::WINDOWS_1252.decode(raw);
+    text.into_owned()
 }
 
 fn validate(h: &Header) -> Result<(), Error> {

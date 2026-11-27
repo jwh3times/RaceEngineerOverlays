@@ -15,7 +15,7 @@ mod vars;
 #[cfg(windows)]
 mod windows;
 
-pub use client::{Client, Frame, Update};
+pub use client::{Client, Frame, Update, decode_session_info};
 pub use layout::{Header, VarType};
 pub use memory::{SharedBuffer, SharedMemory};
 pub use vars::{Value, Var, VarHeader, VarTable, VarValue};

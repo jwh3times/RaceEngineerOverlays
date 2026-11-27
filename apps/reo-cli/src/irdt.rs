@@ -190,7 +190,9 @@ impl IrdtTape {
                 text.truncate(u32_at(&rh, 8) as usize);
                 self.payload = text;
                 ensure!(ok, "session info outside the mapping");
-                self.image.write_i32(16, self.payload.len() as i32);
+                // Like the live sim: the length is the whole region, and the text
+                // ends at the first NUL inside it.
+                self.image.write_i32(16, region as i32);
                 self.image.write_i32(12, value);
                 Record::SessionInfo
             }
@@ -235,6 +237,12 @@ mod tests {
     /// Writes a tape whose session payload fills the whole session region,
     /// as real recordings do.
     fn write_tape(path: &Path) -> Vec<u8> {
+        let mut session = b"WeekendInfo:\n TrackName: x\n".to_vec();
+        session.resize(64, 0);
+        write_tape_with_session(path, &session)
+    }
+
+    fn write_tape_with_session(path: &Path, session: &[u8]) -> Vec<u8> {
         let img = ImageBuilder::new()
             .var("SessionTime", VarType::Double, 1)
             .var("Gear", VarType::Int, 1)
@@ -273,12 +281,10 @@ mod tests {
         file.extend_from_slice(&sdk);
         file.extend_from_slice(&vars);
 
-        let mut session = b"WeekendInfo:\n TrackName: x\n".to_vec();
-        session.resize(64, 0);
         let mut row = vec![0u8; header.buf_len as usize];
         row[0..8].copy_from_slice(&12.5f64.to_le_bytes());
         row[8..12].copy_from_slice(&3i32.to_le_bytes());
-        for (kind, tick, value, payload) in [(2u32, 0i32, 1i32, &session), (1, 77, 0, &row)] {
+        for (kind, tick, value, payload) in [(2u32, 0i32, 1i32, session), (1, 77, 0, &row)] {
             let mut rh = [0u8; RECORD_HEADER_SIZE];
             rh[0..4].copy_from_slice(&kind.to_le_bytes());
             rh[4..8].copy_from_slice(&(RECORD_HEADER_SIZE as u32).to_le_bytes());
@@ -325,6 +331,28 @@ mod tests {
         assert_eq!(
             (yaml.as_str(), revision),
             ("WeekendInfo:\n TrackName: x\n", 1)
+        );
+    }
+
+    /// iRacing reports the whole reserved session region in `sessionInfoLen`, with
+    /// the text NUL-terminated inside it. Replay must keep that, or `reo check`
+    /// measures a smaller copy than the live sim causes.
+    #[test]
+    fn replay_keeps_the_recorded_session_region_length() {
+        let path =
+            std::env::temp_dir().join(format!("reo-irdt-region-test-{}.irdt", std::process::id()));
+        write_tape_with_session(&path, b"WeekendInfo:\n TrackName: y\n");
+        let mut tape = IrdtTape::open(&path).unwrap();
+        while tape.next_record().unwrap().is_some() {}
+        std::fs::remove_file(&path).ok();
+
+        let mut client = Client::new(tape.memory());
+        client.poll(&mut Frame::default()).unwrap();
+        assert_eq!(client.header().session_info_len, 64, "the recorded region");
+        let (yaml, revision) = client.session_info().unwrap();
+        assert_eq!(
+            (yaml.as_str(), revision),
+            ("WeekendInfo:\n TrackName: y\n", 1)
         );
     }
 }
