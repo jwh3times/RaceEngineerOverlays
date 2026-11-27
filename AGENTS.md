@@ -88,12 +88,6 @@ Once a PR is open, read [docs/agents/merging.md](docs/agents/merging.md).
 7. **Telemetry recordings stay out of git** (`*.irdt`, `*.lmudt` are ignored). They carry driver
    names and customer IDs; tests build synthetic data instead.
 
-## Known follow-ups
-
-Tracked as issues, which are the record:
-
-- [Move session-YAML parsing off the telemetry poll thread (#5)](https://github.com/jwh3times/RaceEngineerOverlays/issues/5)
-
 ## Development flow
 
 <!-- shared:development-flow -->

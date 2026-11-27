@@ -63,6 +63,10 @@ DriverInfo:
 ";
 
 fn image() -> Image {
+    builder().build()
+}
+
+fn builder() -> ImageBuilder {
     ImageBuilder::new()
         .var("SessionTime", VarType::Double, 1)
         .var("SessionNum", VarType::Int, 1)
@@ -92,7 +96,6 @@ fn image() -> Image {
         .var("CarIdxPosition", VarType::Int, CARS)
         .var("CarIdxTrackSurface", VarType::Int, CARS)
         .var("CarIdxLastLapTime", VarType::Float, CARS)
-        .build()
 }
 
 /// Thread-safe image the test can edit after handing it to the source.
@@ -172,10 +175,12 @@ fn maps_a_tick_onto_the_model() {
     let mut src = source(&mem);
     let mut t = Telemetry::default();
 
+    // The session parses on the worker, so this tick reports no change yet
+    // (see `keeps_the_previous_session_until_the_new_parse_lands`).
     assert_eq!(
         src.poll(Duration::ZERO, &mut t),
         Poll::Updated {
-            session_changed: true
+            session_changed: false
         }
     );
     assert_eq!(src.last_error(), None);
@@ -221,6 +226,7 @@ fn parses_session_yaml_with_hostile_names() {
     mem.edit(race_tick);
     let mut src = source(&mem);
     src.poll(Duration::ZERO, &mut Telemetry::default());
+    assert!(src.wait_for_session(WAIT));
 
     let info = src.session().expect("session parsed");
     assert_eq!(info.revision, 4);
@@ -253,6 +259,166 @@ fn parses_session_yaml_with_hostile_names() {
     assert_eq!(me.class.est_lap_time, Some(137.4512));
     assert_eq!(me.rating, Some(2875));
     assert_eq!(me.license.as_deref(), Some("A 4.99"));
+}
+
+/// Long enough for any parse on a loaded CI runner; a test that waits this long has failed.
+const WAIT: Duration = Duration::from_secs(5);
+
+fn revision(src: &IRacingSource<Shared>) -> Option<i64> {
+    src.session().map(|s| s.revision)
+}
+
+/// Publishes the next tick, optionally with a new session-info revision, and polls it.
+fn next_tick(
+    mem: &Shared,
+    src: &mut IRacingSource<Shared>,
+    tick: i32,
+    session: Option<(&str, i32)>,
+) -> Poll {
+    mem.edit(|img| {
+        if let Some((yaml, rev)) = session {
+            img.set_session_info(yaml, rev);
+        }
+        img.set_tick(0, tick);
+    });
+    src.poll(Duration::ZERO, &mut Telemetry::default())
+}
+
+const UNCHANGED: Poll = Poll::Updated {
+    session_changed: false,
+};
+const CHANGED: Poll = Poll::Updated {
+    session_changed: true,
+};
+
+#[test]
+fn keeps_the_previous_session_until_the_new_parse_lands() {
+    let mem = Shared(Arc::new(Mutex::new(image())));
+    mem.edit(race_tick);
+    let mut src = source(&mem);
+
+    // The tick that carries the first revision hands it off and returns at once.
+    assert_eq!(
+        src.poll(Duration::ZERO, &mut Telemetry::default()),
+        UNCHANGED
+    );
+    assert_eq!(revision(&src), None);
+    assert!(src.wait_for_session(WAIT));
+    assert_eq!(revision(&src), Some(4));
+    assert_eq!(next_tick(&mem, &mut src, 901, None), CHANGED);
+
+    // A new revision: consumers keep the old session until the parse lands.
+    assert_eq!(
+        next_tick(&mem, &mut src, 902, Some((SESSION_YAML, 5))),
+        UNCHANGED
+    );
+    assert_eq!(revision(&src), Some(4));
+    assert!(src.wait_for_session(WAIT));
+    assert_eq!(revision(&src), Some(5));
+    assert_eq!(next_tick(&mem, &mut src, 903, None), CHANGED);
+    assert_eq!(next_tick(&mem, &mut src, 904, None), UNCHANGED);
+}
+
+/// A source whose first session (revision 4) has been parsed and reported.
+fn settled_source(mem: &Shared) -> IRacingSource<Shared> {
+    mem.edit(race_tick);
+    let mut src = source(mem);
+    src.poll(Duration::ZERO, &mut Telemetry::default());
+    assert!(src.wait_for_session(WAIT));
+    assert_eq!(next_tick(mem, &mut src, 901, None), CHANGED);
+    src
+}
+
+#[test]
+fn polling_alone_picks_up_a_finished_parse() {
+    let mem = Shared(Arc::new(Mutex::new(image())));
+    let mut src = settled_source(&mem);
+    next_tick(&mem, &mut src, 902, Some((SESSION_YAML, 5)));
+
+    // No wait_for_session: a live consumer only ever polls.
+    let deadline = std::time::Instant::now() + WAIT;
+    let mut tick = 903;
+    let mut changed = false;
+    while revision(&src) != Some(5) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the parse never landed"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+        changed |= next_tick(&mem, &mut src, tick, None) == CHANGED;
+        tick += 1;
+    }
+    assert!(changed, "the tick that applied it reported the change");
+}
+
+/// How the worker collapses a burst depends on thread timing, so this checks
+/// only the outcome; the collapsing itself is tested beside the worker.
+#[test]
+fn a_burst_of_revisions_ends_on_the_newest() {
+    let mem = Shared(Arc::new(Mutex::new(image())));
+    let mut src = settled_source(&mem);
+
+    let mut seen = vec![revision(&src)];
+    for (tick, rev) in [(902, 5), (903, 6), (904, 7)] {
+        next_tick(&mem, &mut src, tick, Some((SESSION_YAML, rev)));
+        seen.push(revision(&src));
+    }
+    assert!(src.wait_for_session(WAIT));
+    for tick in 905..910 {
+        next_tick(&mem, &mut src, tick, None);
+        seen.push(revision(&src));
+    }
+
+    assert!(seen.is_sorted(), "a revision went backwards: {seen:?}");
+    assert_eq!(seen.last(), Some(&Some(7)));
+    let stats = src.session_stats();
+    assert_eq!(stats.revisions, 4);
+    assert!((2..=4).contains(&stats.applied), "{stats:?}");
+}
+
+#[test]
+fn a_parse_error_keeps_the_previous_session() {
+    let mem = Shared(Arc::new(Mutex::new(image())));
+    let mut src = settled_source(&mem);
+
+    // A mapping followed by a sequence at the same level is not YAML.
+    let broken = "WeekendInfo:\n TrackName: spa\n- stray\n";
+    next_tick(&mem, &mut src, 902, Some((broken, 5)));
+    assert_eq!(src.last_error(), None, "the parse runs on the worker");
+    assert!(src.wait_for_session(WAIT));
+
+    assert_eq!(revision(&src), Some(4));
+    let error = src.last_error().expect("parse error reported");
+    assert!(error.starts_with("session info YAML"), "{error}");
+    assert_eq!(src.session_yaml(), Some(broken), "the newest raw YAML");
+    assert_eq!(next_tick(&mem, &mut src, 903, None), UNCHANGED);
+}
+
+/// Guards against a shutdown that hangs: the drop must close the worker's
+/// channels before joining it. A large session keeps the parse busy.
+#[test]
+fn dropping_the_source_with_parses_pending_returns_promptly() {
+    let mut yaml = String::from(SESSION_YAML);
+    for idx in 100..1500 {
+        yaml.push_str(&format!(
+            " - CarIdx: {idx}\n   UserName: Driver {idx}\n   CarScreenName: Car\n   CarClassID: 1\n   CarClassShortName: \n"
+        ));
+    }
+    let mut img = builder().session_capacity(yaml.len() + 1).build();
+    race_tick(&mut img);
+    img.set_session_info(&yaml, 4);
+    let mem = Shared(Arc::new(Mutex::new(img)));
+    let mut src = source(&mem);
+    src.poll(Duration::ZERO, &mut Telemetry::default());
+    next_tick(&mem, &mut src, 901, Some((&yaml, 5)));
+    assert_eq!(src.session_stats().revisions, 2);
+
+    let (done, dropped) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        drop(src);
+        done.send(()).unwrap();
+    });
+    dropped.recv_timeout(WAIT).expect("drop returned");
 }
 
 #[test]

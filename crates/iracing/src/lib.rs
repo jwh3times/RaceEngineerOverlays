@@ -2,13 +2,20 @@
 //!
 //! [`IRacingSource`] connects to the sim's shared memory (reconnecting when the
 //! sim restarts), maps each tick onto [`reo_model::Telemetry`], and re-parses the
-//! session YAML into [`reo_model::SessionInfo`] whenever iRacing revises it.
+//! session YAML into [`reo_model::SessionInfo`] whenever iRacing revises it. The
+//! parse runs on a worker thread the source owns, so a revision never stalls
+//! [`TelemetrySource::poll`]: the previous session stays current until the new
+//! one is parsed.
 
+mod parser;
 pub mod session;
 mod telemetry;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use parser::SessionParser;
+pub use parser::SessionStats;
 
 use reo_irsdk::{Client, Frame, SharedMemory, Update, VarTable};
 use reo_model::{Poll, SessionInfo, SimId, Telemetry, TelemetrySource};
@@ -37,7 +44,7 @@ pub struct IRacingSource<M> {
     retry_at: Option<Instant>,
     frame: Frame,
     handles: Handles,
-    session: Option<Arc<SessionInfo>>,
+    parser: SessionParser,
     session_yaml: Option<String>,
     last_error: Option<String>,
 }
@@ -51,7 +58,7 @@ impl<M: SharedMemory> IRacingSource<M> {
             retry_at: None,
             frame: Frame::default(),
             handles: Handles::default(),
-            session: None,
+            parser: SessionParser::default(),
             session_yaml: None,
             last_error: None,
         }
@@ -75,6 +82,33 @@ impl<M: SharedMemory> IRacingSource<M> {
     /// Most recent connection, read or parse problem, kept for diagnostics.
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
+    }
+
+    /// Counters for the session parse.
+    pub fn session_stats(&self) -> SessionStats {
+        self.parser.stats()
+    }
+
+    /// Waits up to `timeout` until every session revision read so far has been
+    /// parsed (or reported lost through [`Self::last_error`]), for tests and
+    /// tools that need a deterministic view. Returns `false` on timeout. A live
+    /// consumer never needs it: [`TelemetrySource::poll`] picks parses up.
+    pub fn wait_for_session(&mut self, timeout: Duration) -> bool {
+        let done = self.parser.wait(timeout);
+        self.take_parser_error();
+        done
+    }
+
+    /// Applies finished parses without blocking.
+    fn collect_sessions(&mut self) {
+        self.parser.collect();
+        self.take_parser_error();
+    }
+
+    fn take_parser_error(&mut self) {
+        if let Some(e) = self.parser.take_error() {
+            self.last_error = Some(e);
+        }
     }
 
     fn connect(&mut self, timeout: Duration) -> bool {
@@ -109,26 +143,21 @@ impl<M: SharedMemory> IRacingSource<M> {
         if vars_changed {
             self.handles = Handles::resolve(conn.client.vars());
         }
-        let mut session_updated = false;
         if session_changed {
             // A failed read leaves the revision unseen, so the next tick retries it.
+            // The copy out of shared memory stays here; only the parse moves.
             match conn.client.session_info() {
                 Ok((yaml, revision)) => {
-                    match session::parse(&yaml, revision) {
-                        Ok(info) => {
-                            self.session = Some(Arc::new(info));
-                            session_updated = true;
-                        }
-                        Err(e) => self.last_error = Some(e.to_string()),
-                    }
-                    self.session_yaml = Some(yaml);
+                    self.session_yaml = Some(yaml.clone());
+                    self.parser.hand_off(yaml, revision);
+                    self.take_parser_error();
                 }
                 Err(e) => self.last_error = Some(e.to_string()),
             }
         }
         self.handles.fill(&self.frame.row, self.frame.tick, out);
         Ok(Poll::Updated {
-            session_changed: session_updated,
+            session_changed: self.parser.take_fresh(),
         })
     }
 }
@@ -142,6 +171,7 @@ where
     }
 
     fn poll(&mut self, timeout: Duration, out: &mut Telemetry) -> Poll {
+        self.collect_sessions();
         if !self.connect(timeout) {
             return Poll::Disconnected;
         }
@@ -170,7 +200,7 @@ where
     }
 
     fn session(&self) -> Option<Arc<SessionInfo>> {
-        self.session.clone()
+        self.parser.session()
     }
 }
 
