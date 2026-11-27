@@ -316,7 +316,9 @@ fn check(path: &std::path::Path) -> Result<()> {
     let (mut frames, mut sessions, mut gaps, mut disconnects) = (0u64, 0u64, 0u64, 0u64);
     let (mut updated, mut not_updated, mut tick_jumps) = (0u64, 0u64, 0u64);
     let mut poll_ns: Vec<u32> = Vec::with_capacity(tape.record_count as usize);
-    let mut handoff_ns: Vec<u32> = Vec::new();
+    let mut revision_tick_ns: Vec<u32> = Vec::new();
+    let mut copy_ns: Vec<u32> = Vec::new();
+    let mut hand_off_ns: Vec<u32> = Vec::new();
     let mut parse_ns: Vec<u32> = Vec::new();
     let mut parse_timeouts = 0u64;
     let mut last_tick: Option<u64> = None;
@@ -347,7 +349,10 @@ fn check(path: &std::path::Path) -> Result<()> {
                 match poll {
                     Poll::Updated { .. } if handed_off => {
                         updated += 1;
-                        handoff_ns.push(ns);
+                        revision_tick_ns.push(ns);
+                        let stats = src.session_stats();
+                        copy_ns.extend(stats.last_copy.map(as_ns));
+                        hand_off_ns.extend(stats.last_hand_off.map(as_ns));
                         // Untimed: let the worker finish so the replay stays
                         // deterministic and every revision gets parsed.
                         if src.wait_for_session(Duration::from_secs(5)) {
@@ -422,8 +427,10 @@ fn check(path: &std::path::Path) -> Result<()> {
             .map_or(String::new(), |e| format!(" (last error: {e})"))
     );
     println!("tick cost       {}", percentiles(&mut poll_ns));
-    println!("tick + revision {}", percentiles(&mut handoff_ns));
-    println!("parse (worker)  {}", percentiles(&mut parse_ns));
+    println!("tick + revision {}", percentiles(&mut revision_tick_ns));
+    println!("  copy out      {}", percentiles(&mut copy_ns));
+    println!("  hand-off      {}", percentiles(&mut hand_off_ns));
+    println!("decode + parse  {}", percentiles(&mut parse_ns));
 
     if let Some(info) = src.session() {
         println!();

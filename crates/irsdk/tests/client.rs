@@ -184,6 +184,122 @@ fn session_changed_stays_set_until_session_info_is_read() {
     assert_eq!(client.session_info().unwrap(), ("a: 2\n".to_owned(), 2));
 }
 
+/// Memory that counts the bytes copied out of the session-info region, and can
+/// replace the whole image during the first copy that touches that region.
+struct SessionReader {
+    bytes: RefCell<Vec<u8>>,
+    region: std::ops::Range<usize>,
+    copied: Cell<usize>,
+    reads: Cell<usize>,
+    rewrite_during_first_read: RefCell<Option<Vec<u8>>>,
+}
+
+impl SessionReader {
+    fn new(img: Image) -> Self {
+        let mut raw = [0u8; reo_irsdk::layout::HEADER_SIZE];
+        raw.copy_from_slice(&img.bytes[..reo_irsdk::layout::HEADER_SIZE]);
+        let header = reo_irsdk::Header::parse(&raw);
+        let start = header.session_info_offset as usize;
+        Self {
+            region: start..start + header.session_info_len as usize,
+            bytes: RefCell::new(img.bytes),
+            copied: Cell::new(0),
+            reads: Cell::new(0),
+            rewrite_during_first_read: RefCell::new(None),
+        }
+    }
+}
+
+impl SharedMemory for SessionReader {
+    fn len(&self) -> usize {
+        self.bytes.borrow().len()
+    }
+
+    fn read_into(&self, offset: usize, dst: &mut [u8]) -> bool {
+        let ok = self.bytes.borrow().read_into(offset, dst);
+        let overlap = (offset + dst.len()).min(self.region.end) as isize
+            - offset.max(self.region.start) as isize;
+        if overlap > 0 {
+            self.copied.set(self.copied.get() + overlap as usize);
+            self.reads.set(self.reads.get() + 1);
+            if let Some(next) = self.rewrite_during_first_read.borrow_mut().take() {
+                *self.bytes.borrow_mut() = next;
+            }
+        }
+        ok
+    }
+}
+
+/// iRacing reserves a large region and NUL-terminates the text inside it; the
+/// live layout copies the text, not the region.
+#[test]
+fn copies_session_info_only_up_to_its_terminator() {
+    // About 40 KB: the text spans several copy chunks, like a real 66 KB session.
+    let yaml = "DriverInfo:\n Drivers:\n - UserName: Jürgen Müller\n".repeat(800);
+    let mut img = ImageBuilder::new()
+        .var("Gear", VarType::Int, 1)
+        .session_capacity(1 << 20)
+        .build();
+    img.set_tick(0, 1);
+    img.set_session_info(&yaml, 3);
+    let mut client = Client::new(SessionReader::new(img));
+    client.poll(&mut Frame::default()).unwrap();
+
+    let mut raw = Vec::new();
+    assert_eq!(client.read_session_info(&mut raw).unwrap(), 3);
+    assert_eq!(raw, encoding_rs::WINDOWS_1252.encode(&yaml).0.as_ref());
+    assert_eq!(reo_irsdk::decode_session_info(&raw), yaml);
+    let copied = client.memory().copied.get();
+    assert!(
+        copied < 2 * raw.len(),
+        "copied {copied} bytes of a 1 MiB region for {} bytes of text",
+        raw.len()
+    );
+}
+
+/// Stopping at the terminator must not hide a header whose region runs past the
+/// mapping: that is a corrupt or foreign header, as when the whole region was read.
+#[test]
+fn rejects_a_session_region_past_the_end_of_the_mapping() {
+    let mut img = image();
+    img.set_tick(0, 1);
+    img.set_session_info("a: 1\n", 1);
+    let mapping = img.bytes.len() as i32;
+    img.bytes[16..20].copy_from_slice(&mapping.to_le_bytes());
+    let mut client = Client::new(img.bytes);
+    client.poll(&mut Frame::default()).unwrap();
+
+    let result = client.read_session_info(&mut Vec::new());
+    assert!(
+        matches!(result, Err(reo_irsdk::Error::Truncated(_))),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn retries_when_the_session_is_revised_during_the_copy() {
+    let builder = || ImageBuilder::new().var("Gear", VarType::Int, 1);
+    let mut first = builder().build();
+    first.set_tick(0, 1);
+    first.set_session_info("a: 1\n", 1);
+    let mut second = builder().build();
+    second.set_tick(0, 1);
+    second.set_session_info("a: 2\n", 2);
+
+    let mem = SessionReader::new(first);
+    *mem.rewrite_during_first_read.borrow_mut() = Some(second.bytes);
+    let mut client = Client::new(mem);
+    client.poll(&mut Frame::default()).unwrap();
+
+    let mut raw = b"stale bytes from the last revision".to_vec();
+    assert_eq!(client.read_session_info(&mut raw).unwrap(), 2);
+    assert_eq!(raw, b"a: 2\n");
+    assert!(
+        client.memory().reads.get() >= 2,
+        "the torn copy was retried"
+    );
+}
+
 type Rewrite = Box<dyn Fn(&mut Vec<u8>)>;
 
 /// Memory that simulates the sim publishing a new tick into the same buffer

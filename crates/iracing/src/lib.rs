@@ -3,9 +3,10 @@
 //! [`IRacingSource`] connects to the sim's shared memory (reconnecting when the
 //! sim restarts), maps each tick onto [`reo_model::Telemetry`], and re-parses the
 //! session YAML into [`reo_model::SessionInfo`] whenever iRacing revises it. The
-//! parse runs on a worker thread the source owns, so a revision never stalls
-//! [`TelemetrySource::poll`]: the previous session stays current until the new
-//! one is parsed.
+//! poll only copies a revision out of shared memory, into a reused buffer; the
+//! decode and the parse run on a worker thread the source owns, so a revision
+//! never stalls [`TelemetrySource::poll`]: the previous session stays current
+//! until the new one is parsed.
 
 mod parser;
 pub mod session;
@@ -45,7 +46,6 @@ pub struct IRacingSource<M> {
     frame: Frame,
     handles: Handles,
     parser: SessionParser,
-    session_yaml: Option<String>,
     last_error: Option<String>,
 }
 
@@ -59,7 +59,6 @@ impl<M: SharedMemory> IRacingSource<M> {
             frame: Frame::default(),
             handles: Handles::default(),
             parser: SessionParser::default(),
-            session_yaml: None,
             last_error: None,
         }
     }
@@ -74,9 +73,11 @@ impl<M: SharedMemory> IRacingSource<M> {
         &self.frame
     }
 
-    /// Unparsed session YAML as last read from the sim.
+    /// Unparsed session YAML of the newest revision the worker has decoded,
+    /// whether or not it parsed. After [`Self::wait_for_session`] it is the
+    /// newest revision read from the sim.
     pub fn session_yaml(&self) -> Option<&str> {
-        self.session_yaml.as_deref()
+        self.parser.yaml()
     }
 
     /// Most recent connection, read or parse problem, kept for diagnostics.
@@ -145,13 +146,14 @@ impl<M: SharedMemory> IRacingSource<M> {
         }
         if session_changed {
             // A failed read leaves the revision unseen, so the next tick retries it.
-            // The copy out of shared memory stays here; only the parse moves.
-            match conn.client.session_info() {
-                Ok((yaml, revision)) => {
-                    self.session_yaml = Some(yaml.clone());
-                    self.parser.hand_off(yaml, revision);
-                    self.take_parser_error();
-                }
+            // The copy out of shared memory stays here (rule 3); the decode and
+            // the parse run on the worker.
+            let client = &mut conn.client;
+            match self
+                .parser
+                .read_and_hand_off(|raw| client.read_session_info(raw))
+            {
+                Ok(()) => self.take_parser_error(),
                 Err(e) => self.last_error = Some(e.to_string()),
             }
         }

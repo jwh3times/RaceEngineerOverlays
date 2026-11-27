@@ -42,21 +42,31 @@
 |---|---|
 | `crates/model` (`reo-model`) | Sim-agnostic types: `Telemetry` (per tick, reused), `SessionInfo` (rare, `Arc`), the `TelemetrySource` trait. SI units, `None` for "not provided". |
 | `crates/irsdk` (`reo-irsdk`) | iRacing shared-memory reader: header and variable table parsing, torn-read-safe row copies, typed `Var<T>` handles, the Windows mapping and event. Includes `testing::ImageBuilder` for synthetic images. |
-| `crates/iracing` (`reo-iracing`) | Adapter: maps SDK variables and session YAML onto `reo-model`; `IRacingSource` handles connecting and reconnecting, and parses each session-YAML revision on a worker thread it owns, so the poll never parses. |
+| `crates/iracing` (`reo-iracing`) | Adapter: maps SDK variables and session YAML onto `reo-model`; `IRacingSource` handles connecting and reconnecting, and decodes and parses each session-YAML revision on a worker thread it owns, so the poll only copies the text out of shared memory. |
 | `apps/reo-cli` (`reo`) | Developer CLI: `watch`, `vars`, `session` (live or from a tape) and `check` (runs a whole tape and reports timings and sanity statistics). |
 
 ## Measured so far
 
 The 10-minute AI race tape from irDashies' test data (36,000 ticks, 41 cars,
-333 variables), measured with `reo check` on a release build (2026-11-26):
+333 variables), measured with `reo check` on a release build (2026-11-27). Tape
+replay keeps the session-info region length the sim reports (512 KiB, with the
+66 KB YAML NUL-terminated inside it), so the copy matches the live layout:
 
-- Read and map one tick: **mean 1.2 µs, p99 2.2 µs**.
+- Read and map one tick: **mean 1.2–1.4 µs, p99 2.4 µs**.
 - iRacing revises the session YAML about 70 times in 10 minutes. The adapter
-  parses each revision on a worker thread it owns, and all 70 are applied:
-  - The tick that hands a revision to the worker costs **mean about 0.2–0.3 ms**.
-    That is the copy out of shared memory and the Windows-1252 decode of the
-    66 KB YAML, which stay on the poll thread.
-  - The parse on the worker costs **mean 4.6 ms, max about 8 ms**.
+  decodes and parses each revision on a worker thread it owns, and all 70 are
+  applied:
+  - The tick that hands a revision to the worker costs **mean about 17 µs, p50
+    11 µs, p99 19 µs**. That is the tick itself, the copy of the text (not the
+    whole region) out of shared memory into a reused buffer (**about 6 µs**), and
+    the hand-off (**about 4.5 µs**). The median adds up; the mean carries the
+    first revision, which starts the worker and allocates the first buffer
+    (about 300 µs). In steady state the poll thread allocates nothing for a
+    revision; it allocates only for one that arrives while the worker holds the
+    only buffer and another is waiting, or one that outgrows the buffer. Before
+    the buffer was reused, allocating and faulting in fresh pages made this tick
+    about 200 µs.
+  - The decode and parse on the worker cost **mean 4.6 ms, max about 7.5 ms**.
 
 ## Roadmap
 
