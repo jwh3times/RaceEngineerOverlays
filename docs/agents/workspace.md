@@ -11,8 +11,7 @@ none
 
 ## Never-remove paths
 
-- `irdashies/` — the upstream reference clone and its test tapes; git ignores it, so nothing
-  restores it.
+- `tapes/` — the local telemetry recordings; git ignores it, so nothing restores it.
 - `*.irdt` and `*.lmudt` recordings — captured from a real session, not regenerable.
 
 ## Dev stack
