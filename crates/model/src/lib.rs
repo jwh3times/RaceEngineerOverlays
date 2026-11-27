@@ -228,7 +228,10 @@ pub enum Poll {
     Disconnected,
     /// No new tick arrived before the timeout.
     Unchanged,
-    /// The telemetry buffer holds a new tick.
+    /// The telemetry buffer holds a new tick. `session_changed` is set on the
+    /// first tick after [`TelemetrySource::session`] started returning a newer
+    /// description. A source that parses the session in the background reports
+    /// it a few ticks after the tick that carried the sim's revision.
     Updated { session_changed: bool },
 }
 
@@ -240,6 +243,8 @@ pub trait TelemetrySource: Send {
     /// Handles connecting and reconnecting internally.
     fn poll(&mut self, timeout: Duration, out: &mut Telemetry) -> Poll;
 
-    /// Latest session description, if one has been received.
+    /// Latest fully parsed session description, if one has been received. After
+    /// the sim revises the session it keeps returning the previous one until the
+    /// new one is ready, so a car can appear in telemetry before its driver entry.
     fn session(&self) -> Option<Arc<SessionInfo>>;
 }

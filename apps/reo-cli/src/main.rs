@@ -315,9 +315,10 @@ fn check(path: &std::path::Path) -> Result<()> {
 
     let (mut frames, mut sessions, mut gaps, mut disconnects) = (0u64, 0u64, 0u64, 0u64);
     let (mut updated, mut not_updated, mut tick_jumps) = (0u64, 0u64, 0u64);
-    let mut session_parses = 0u64;
     let mut poll_ns: Vec<u32> = Vec::with_capacity(tape.record_count as usize);
-    let mut session_ns: Vec<u32> = Vec::new();
+    let mut handoff_ns: Vec<u32> = Vec::new();
+    let mut parse_ns: Vec<u32> = Vec::new();
+    let mut parse_timeouts = 0u64;
     let mut last_tick: Option<u64> = None;
     let mut elapsed = 0.0f64;
 
@@ -338,18 +339,26 @@ fn check(path: &std::path::Path) -> Result<()> {
             Record::Frame { elapsed_s } => {
                 frames += 1;
                 elapsed = elapsed_s;
+                let revisions = src.session_stats().revisions;
                 let begin = Instant::now();
                 let poll = src.poll(Duration::ZERO, &mut t);
-                let ns = begin.elapsed().as_nanos().min(u128::from(u32::MAX)) as u32;
+                let ns = as_ns(begin.elapsed());
+                let handed_off = src.session_stats().revisions > revisions;
                 match poll {
-                    Poll::Updated { session_changed } => {
+                    Poll::Updated { .. } if handed_off => {
                         updated += 1;
-                        if session_changed {
-                            session_parses += 1;
-                            session_ns.push(ns);
+                        handoff_ns.push(ns);
+                        // Untimed: let the worker finish so the replay stays
+                        // deterministic and every revision gets parsed.
+                        if src.wait_for_session(Duration::from_secs(5)) {
+                            parse_ns.extend(src.session_stats().last_parse.map(as_ns));
                         } else {
-                            poll_ns.push(ns);
+                            parse_timeouts += 1;
                         }
+                    }
+                    Poll::Updated { .. } => {
+                        updated += 1;
+                        poll_ns.push(ns);
                     }
                     _ => not_updated += 1,
                 }
@@ -399,13 +408,22 @@ fn check(path: &std::path::Path) -> Result<()> {
     println!(
         "adapter         {updated} ticks delivered, {not_updated} frames not delivered, {tick_jumps} tick discontinuities"
     );
+    let stats = src.session_stats();
     println!(
-        "session parses  {session_parses}{}",
+        "session parses  {} applied of {} revisions{}{}",
+        stats.applied,
+        stats.revisions,
+        if parse_timeouts > 0 {
+            format!(", {parse_timeouts} timed out")
+        } else {
+            String::new()
+        },
         src.last_error()
             .map_or(String::new(), |e| format!(" (last error: {e})"))
     );
     println!("tick cost       {}", percentiles(&mut poll_ns));
-    println!("tick + session  {}", percentiles(&mut session_ns));
+    println!("tick + revision {}", percentiles(&mut handoff_ns));
+    println!("parse (worker)  {}", percentiles(&mut parse_ns));
 
     if let Some(info) = src.session() {
         println!();
@@ -474,6 +492,10 @@ fn check(path: &std::path::Path) -> Result<()> {
 
 fn add_range(r: &mut Range, v: f64) {
     r.add(v);
+}
+
+fn as_ns(d: Duration) -> u32 {
+    d.as_nanos().min(u128::from(u32::MAX)) as u32
 }
 
 fn percentiles(ns: &mut [u32]) -> String {

@@ -11,7 +11,7 @@ the roadmap.
 
 ## Status
 
-Early. The telemetry core is done: it reads iRacing's shared memory (about 1.4 µs per tick) and
+Early. The telemetry core is done: it reads iRacing's shared memory (about 1.2 µs per tick) and
 maps it onto a sim-agnostic model. There are no overlays yet; the next steps are the telemetry
 service thread and the first native overlay.
 

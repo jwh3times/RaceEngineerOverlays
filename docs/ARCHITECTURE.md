@@ -42,26 +42,29 @@
 |---|---|
 | `crates/model` (`reo-model`) | Sim-agnostic types: `Telemetry` (per tick, reused), `SessionInfo` (rare, `Arc`), the `TelemetrySource` trait. SI units, `None` for "not provided". |
 | `crates/irsdk` (`reo-irsdk`) | iRacing shared-memory reader: header and variable table parsing, torn-read-safe row copies, typed `Var<T>` handles, the Windows mapping and event. Includes `testing::ImageBuilder` for synthetic images. |
-| `crates/iracing` (`reo-iracing`) | Adapter: maps SDK variables and session YAML onto `reo-model`; `IRacingSource` handles connecting and reconnecting. |
+| `crates/iracing` (`reo-iracing`) | Adapter: maps SDK variables and session YAML onto `reo-model`; `IRacingSource` handles connecting and reconnecting, and parses each session-YAML revision on a worker thread it owns, so the poll never parses. |
 | `apps/reo-cli` (`reo`) | Developer CLI: `watch`, `vars`, `session` (live or from a tape) and `check` (runs a whole tape and reports timings and sanity statistics). |
 
 ## Measured so far
 
 The 10-minute AI race tape from irDashies' test data (36,000 ticks, 41 cars,
-333 variables), measured with `reo check` on a release build:
+333 variables), measured with `reo check` on a release build (2026-11-26):
 
-- Read and map one tick: **mean 1.4 µs, p99 2.3 µs**.
-- A tick that includes a session-YAML re-parse: **mean 5.6 ms, max 8.3 ms**.
-  This happens about 70 times in 10 minutes, so the parse must move off the
-  telemetry thread before the render loop depends on it.
+- Read and map one tick: **mean 1.2 µs, p99 2.2 µs**.
+- iRacing revises the session YAML about 70 times in 10 minutes. The adapter
+  parses each revision on a worker thread it owns, and all 70 are applied:
+  - The tick that hands a revision to the worker costs **mean about 0.2–0.3 ms**.
+    That is the copy out of shared memory and the Windows-1252 decode of the
+    66 KB YAML, which stay on the poll thread.
+  - The parse on the worker costs **mean 4.6 ms, max about 8 ms**.
 
 ## Roadmap
 
 1. **Core (done):** iRacing reader, model, adapter, CLI, tape playback.
-2. **Telemetry service:** a dedicated thread that owns the source, moves the
-   session parse to a worker, and publishes snapshots to consumers (triple
-   buffer or seqlock, no locks on the render path). Add derived state: relative
-   gaps, a class-aware standings sort, and fuel per lap.
+2. **Telemetry service:** a dedicated thread that owns the source and publishes
+   snapshots to consumers (triple buffer or seqlock, no locks on the render
+   path). Add derived state: relative gaps, a class-aware standings sort, and
+   fuel per lap.
 3. **Our own recorder and tape format,** so testing stops depending on irDashies'
    `.irdt` format.
 4. **Native overlay spike:** one DirectComposition click-through window drawing
