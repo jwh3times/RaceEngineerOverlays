@@ -10,7 +10,7 @@ Changelog's categories:
 ```markdown
 ### Added
 
-- The Delta widget shows the gap to the session best lap.
+- The Delta widget shows the time difference to the session best lap.
 
 ### Fixed
 

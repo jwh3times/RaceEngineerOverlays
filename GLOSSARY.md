@@ -70,7 +70,7 @@ Throttle, brake, clutch and steering as a trace and as bars, with gear and speed
 _Avoid_: pedals, telemetry (too broad)
 
 **Delta**:
-The driver's live gap to a reference lap, shown as a bar.
+The driver's live time difference to a reference lap, shown as a bar.
 _Avoid_: delta bar (as the term), lap delta
 
 **Fuel**:

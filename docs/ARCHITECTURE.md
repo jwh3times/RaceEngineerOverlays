@@ -73,8 +73,8 @@ replay keeps the session-info region length the sim reports (512 KiB, with the
 1. **Core (done):** iRacing reader, model, adapter, CLI, tape playback.
 2. **Telemetry service:** a dedicated thread that owns the source and publishes
    snapshots to consumers (triple buffer or seqlock, no locks on the render
-   path). Add derived state: relative gaps, a class-aware standings sort, and
-   fuel per lap.
+   path). Add derived state: the Relative's time to each nearby car, a
+   class-aware standings sort, and fuel per lap.
 3. **Our own recorder and tape format,** so testing stops depending on irDashies'
    `.irdt` format.
 4. **Native overlay spike:** one DirectComposition click-through window drawing
