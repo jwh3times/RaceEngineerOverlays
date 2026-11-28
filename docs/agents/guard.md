@@ -12,10 +12,8 @@ Each `##` heading is one setting, defined in `.agents/skills/open-pr/settings/gu
 
 - `^git add\b.*\.(irdt|lmudt)\b` — a telemetry recording carries driver names and customer IDs,
   and `.gitignore` keeps them out on purpose (`AGENTS.md` rule 7).
-- `^(npm|npx)( --?[\w-]+)* run irsdk:build\b` — irDashies' native build deletes `irdashies/build/`
-  before it compiles, and it needs the ClangCL toolset; a failed build leaves the reference clone
-  unable to start.
 
 ## Protected paths
 
-- `^irdashies/` — the upstream reference clone, kept unmodified (`AGENTS.md`, Layout).
+- `^tapes/` — the local telemetry recordings; git ignores them, so nothing restores them
+  (`AGENTS.md`, Layout).

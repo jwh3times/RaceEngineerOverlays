@@ -1,9 +1,7 @@
 /target/
 
-# Upstream irDashies clone, kept locally for reference and test tapes only.
-/irdashies/
-
 # Telemetry recordings can contain driver names and customer IDs.
+/tapes/
 *.irdt
 *.lmudt
 

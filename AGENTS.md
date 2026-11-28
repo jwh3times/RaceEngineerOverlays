@@ -23,8 +23,8 @@ cargo fmt --all                             # CI runs `cargo fmt --all --check`
 cargo build --release --locked -p reo-cli
 
 # Validate the core against a recorded race (no sim needed)
-target/release/reo check irdashies/test-data/telemetry/ai-race-10min.irdt
-target/release/reo watch --irdt irdashies/test-data/telemetry/ai-race-10min.irdt --speed 10
+target/release/reo check tapes/ai-race-10min.irdt
+target/release/reo watch --irdt tapes/ai-race-10min.irdt --speed 10
 target/release/reo vars  --irdt <tape>      # every variable with its current value
 target/release/reo session --raw --irdt <tape>
 
@@ -67,9 +67,9 @@ Once a PR is open, read [docs/agents/merging.md](docs/agents/merging.md).
 - `apps/reo-cli`: developer CLI (`reo`).
 - `docs/`: architecture and decisions; `docs/agents/` holds the settings the shared skills read.
 - `scripts/`: repository scripts (Node, no dependencies) and their tests.
-- `irdashies/`: an unmodified clone of upstream irDashies (MIT), kept for **reference only**. It
-  is not part of this project's build and is ignored by git. Don't copy its code; its test-data
-  tapes are used for local validation.
+- `tapes/`: local telemetry recordings for validation, ignored by git (rule 7). It holds
+  `ai-race-10min.irdt` and `lmu-session.lmudt`, taken from upstream irDashies' test data (MIT,
+  stored there in Git LFS); fetch them from there on a fresh machine.
 
 ## Rules for every change
 
