@@ -1,6 +1,6 @@
 # Race Engineer Overlays
 
-Fast, native sim-racing overlays: a Rust telemetry core, Direct2D overlays drawn in their own
+Fast, native sim-racing overlays: a Rust telemetry core, Direct2D widgets drawn in their own
 click-through windows, and a web-based settings app. iRacing comes first; Le Mans Ultimate, ACC and
 AMS2 follow behind the same model.
 
@@ -12,8 +12,8 @@ the roadmap.
 ## Status
 
 Early. The telemetry core is done: it reads iRacing's shared memory (about 1.2 µs per tick) and
-maps it onto a sim-agnostic model. There are no overlays yet; the next steps are the telemetry
-service thread and the first native overlay.
+maps it onto a sim-agnostic model. There are no widgets yet; the next steps are the telemetry
+service thread and the native overlay spike.
 
 ## The `reo` CLI
 

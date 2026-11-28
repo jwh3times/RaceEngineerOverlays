@@ -7,12 +7,15 @@ changing that area.
 ## What this is
 
 Race Engineer Overlays: sim-racing overlays built from scratch for performance, with a Rust core,
-native Direct2D overlays and a web-based settings app. iRacing comes first, with more sims to
+native Direct2D widgets and a web-based settings app. iRacing comes first, with more sims to
 follow. "reo" is the working name used in crate and binary names. Licensed AGPL-3.0-only. Don't
 add dependencies with incompatible licenses (MIT, Apache-2.0, BSD, MPL-2.0 and LGPL are fine).
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before structural changes. It records the
 stack decision, the crate roles, the measured numbers and the roadmap.
+
+[`GLOSSARY.md`](GLOSSARY.md) holds the domain language: sims, tapes, the widgets and the
+configuration terms. Use its terms, and not the words it lists to avoid.
 
 ## Commands
 

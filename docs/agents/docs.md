@@ -20,6 +20,9 @@
 - `changelog.d/*.md`: each branch's changelog fragment (every file there but the README), stamped
   into `CHANGELOG.md` after its merge and checked by the `changelog` CI job. `ship-owned`, like the
   `VERSION` file.
+- `GLOSSARY.md`: the project's domain language: sims, tapes, the widgets and configuration terms,
+  each with the words to avoid. Update when a term is settled or renamed, or a widget is added;
+  never for implementation detail.
 - `docs/ARCHITECTURE.md`: goals, the stack decision, the crates, the measured numbers and the
   roadmap. Update when a crate is added or its role changes (`Cargo.toml` members), a measurement
   is retaken, or a roadmap step lands.

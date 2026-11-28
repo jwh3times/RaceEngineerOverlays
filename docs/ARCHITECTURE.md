@@ -26,7 +26,7 @@
 - **Overlays draw natively.** Each widget gets its own small click-through
   window, which costs almost nothing natively; this is the main reason to avoid a
   browser engine for the overlays. Widgets redraw only when their inputs change.
-  Only fast widgets (inputs, delta bar, radar) run at the display rate.
+  Only fast widgets (inputs, delta, radar) run at the display rate.
 - **Settings is a web app** (Tauri). It's forms-heavy and not on the hot path,
   so CSS and hot reload win there. It's closed while racing.
 - **Themes and layouts are data files,** hot-reloaded, so the look can be
@@ -78,7 +78,7 @@ replay keeps the session-info region length the sim reports (512 KiB, with the
 3. **Our own recorder and tape format,** so testing stops depending on irDashies'
    `.irdt` format.
 4. **Native overlay spike:** one DirectComposition click-through window drawing
-   a delta bar and an input trace with Direct2D/DirectWrite. Measure the game's
+   a delta bar and an input trace with Direct2D/DirectWrite. Measure the sim's
    frame time with PresentMon on the rig.
 5. **Widget toolkit:** layout, text, theming from data files, hot reload.
 6. **First widgets:** relative, standings, inputs, delta, fuel.
