@@ -15,6 +15,15 @@ released in 0.1.0._
 
 No unreleased changes.
 
+## [0.1.9] - 2026-11-27
+
+### Changed
+
+- The local validation tapes now live in a gitignored `tapes/` folder at the repository root, so
+  the validation commands are `reo check tapes/ai-race-10min.irdt` and
+  `reo watch --irdt tapes/ai-race-10min.irdt`. The reference clone of irDashies is no longer kept
+  in the working tree.
+
 ## [0.1.8] - 2026-11-27
 
 ### Changed
