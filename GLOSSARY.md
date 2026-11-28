@@ -15,6 +15,16 @@ _Avoid_: game, title
 A recording of a sim's telemetry and session data that can be replayed in place of the live sim.
 _Avoid_: replay (iRacing's own replay is a different thing), log, dump
 
+### Race timing
+
+**Gap**:
+The time a car is behind the leader of its own class.
+_Avoid_: delta (that is the Delta widget's term), behind
+
+**Interval**:
+The time a car is behind the car directly ahead of it in its own class.
+_Avoid_: gap (for the car ahead), split
+
 ### Widgets
 
 **Widget**:
@@ -60,7 +70,7 @@ Throttle, brake, clutch and steering as a trace and as bars, with gear and speed
 _Avoid_: pedals, telemetry (too broad)
 
 **Delta**:
-The driver's live gap to a reference lap, shown as a bar.
+The driver's live time difference to a reference lap, shown as a bar.
 _Avoid_: delta bar (as the term), lap delta
 
 **Fuel**:
